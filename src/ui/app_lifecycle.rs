@@ -977,6 +977,27 @@ mod tests {
             AppAccentColor::Blue
         ));
     }
+
+    #[test]
+    fn macro_unlock_requirement_includes_eligible_emoji_assignment() {
+        let mut picker = KeycodePicker::default();
+        picker.selected_tab = KeycodeTab::Symbols;
+        picker.macro_buffer_size = Some(8192);
+        picker.emoji_target_keycode = Some(0x0004);
+
+        assert!(picker_requires_macro_unlock(&picker));
+
+        picker.emoji_target_keycode = None;
+        assert!(!picker_requires_macro_unlock(&picker));
+    }
+
+    #[test]
+    fn macro_editor_still_requires_unlock() {
+        let mut picker = KeycodePicker::default();
+        picker.selected_tab = KeycodeTab::Macro;
+
+        assert!(picker_requires_macro_unlock(&picker));
+    }
 }
 
 impl eframe::App for EntropyApp {
@@ -1117,20 +1138,14 @@ impl eframe::App for EntropyApp {
             self.selected_encoder = None;
         }
 
-        if !self.keycode_picker.open || self.keycode_picker.selected_tab != KeycodeTab::Macro {
+        let picker_requires_macro_unlock = picker_requires_macro_unlock(&self.keycode_picker);
+        if !self.keycode_picker.open || !picker_requires_macro_unlock {
             self.macro_auto_unlock_cancelled = false;
         }
 
-        let emoji_tab_requires_macro_unlock = self.keycode_picker.selected_tab
-            == KeycodeTab::Symbols
-            && self.keycode_picker.supports_macro
-            && self.keycode_picker.macro_count > 0
-            && self.keycode_picker.macro_buffer_size.is_some()
-            && self.keycode_picker.emoji_target_keycode.is_some();
         if self.firmware == FirmwareProtocol::Vial
             && self.keycode_picker.open
-            && (self.keycode_picker.selected_tab == KeycodeTab::Macro
-                || emoji_tab_requires_macro_unlock)
+            && picker_requires_macro_unlock
             && !self.unlock_open
             && !self.vial_unlock_polling
             && !self.macro_auto_unlock_cancelled
