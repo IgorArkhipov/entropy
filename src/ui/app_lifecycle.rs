@@ -129,6 +129,8 @@ impl EntropyApp {
             }
         }
 
+        self.poll_emoji_assignment(ctx);
+        self.poll_emoji_assignment(ctx);
         self.poll_layer_write(ctx);
         self.poll_combo_write(ctx);
         self.maybe_start_combo_write(ctx);
@@ -631,7 +633,7 @@ mod tests {
         });
         app.layout_options_value = Some(1);
 
-        app.apply_picker_results();
+        app.apply_picker_results(&ctx);
         assert_eq!(app.keycode_picker.result, Some(0x0004));
         assert_eq!(app.key_override_entries[0].trigger, 0);
 
@@ -1122,12 +1124,13 @@ impl eframe::App for EntropyApp {
             self.last_applied_theme = Some((self.dark_mode, accent_color));
         }
 
+<<<<<<< HEAD
         // Deliver results from any background file dialog (import/export pickers
         // run off the UI thread so the portal round-trip never freezes egui).
         #[cfg(not(target_arch = "wasm32"))]
         self.poll_file_dialog(ctx);
 
-        self.apply_picker_results();
+        self.apply_picker_results(ctx);
 
         // Deselect key when picker is closed without choosing
         if !self.keycode_picker.open
@@ -1505,7 +1508,7 @@ impl eframe::App for EntropyApp {
             self.keycode_picker.show_shifted_number_symbols =
                 self.app_settings.show_shifted_number_symbols;
             self.keycode_picker.show(ctx);
-            self.apply_picker_results();
+            self.apply_picker_results(ctx);
         }
 
         if self.combo_pick_target.is_some()

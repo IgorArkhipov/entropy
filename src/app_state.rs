@@ -2808,6 +2808,9 @@ pub struct EntropyApp {
     pub(super) settings_write_generation: u64,
     pub(super) qmk_settings_write_queue: QmkSettingsWriteQueue,
     pub(super) pending_device_connect: Option<usize>,
+    /// Serialized macro-buffer then target-key write for emoji assignment.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(super) emoji_assignment_task: Option<EmojiAssignmentTask>,
     /// Built-in qmk-hid-host bridges for displays/presets that need host data
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) qmk_hid_hosts:
