@@ -76,6 +76,15 @@ fn connection_replaces_layout_canvas(connect_state: &ConnectState) -> bool {
     matches!(connect_state, ConnectState::Loading { .. })
 }
 
+fn picker_requires_macro_unlock(picker: &KeycodePicker) -> bool {
+    picker.selected_tab == KeycodeTab::Macro
+        || (picker.selected_tab == KeycodeTab::Symbols
+            && picker.supports_macro
+            && picker.macro_count > 0
+            && picker.macro_buffer_size.is_some()
+            && picker.emoji_target_keycode.is_some())
+}
+
 impl EntropyApp {
     fn main_window_hidden_to_tray(&self) -> bool {
         #[cfg(target_os = "windows")]
@@ -101,6 +110,10 @@ impl EntropyApp {
         selected_device_is_bluetooth: bool,
     ) {
         self.poll_settings_write(ctx);
+<<<<<<< HEAD
+        // Retire an abandoned emoji worker before deciding whether HID scanning
+        // can proceed; otherwise its timeout would delay reconnect by a frame.
+        self.poll_emoji_assignment(ctx);
         self.flush_due_qmk_setting_writes();
         if should_poll_device_scan(main_window_hidden_to_tray) {
             if hid_lifecycle_writes_available(self.hid_write_lifecycle_busy()) {
@@ -129,8 +142,6 @@ impl EntropyApp {
             }
         }
 
-        self.poll_emoji_assignment(ctx);
-        self.poll_emoji_assignment(ctx);
         self.poll_layer_write(ctx);
         self.poll_combo_write(ctx);
         self.maybe_start_combo_write(ctx);
