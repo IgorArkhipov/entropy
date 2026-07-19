@@ -27,6 +27,14 @@ impl EntropyApp {
             return false;
         }
 
+        // Process exit cannot reconnect or schedule more HID I/O. Let it
+        // proceed rather than wait indefinitely for a reclaim-only worker.
+        if self.emoji_assignment_reclaim_task.is_some()
+            && !self.hid_write_task_active_except_emoji_reclaim()
+        {
+            return false;
+        }
+
         self.exit_after_hid_write = true;
         ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
