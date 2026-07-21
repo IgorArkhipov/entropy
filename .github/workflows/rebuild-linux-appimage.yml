@@ -1,0 +1,80 @@
+name: Rebuild Linux AppImage
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Git ref to rebuild
+        required: true
+        default: v0.2.8
+        type: string
+      release_tag:
+        description: Release tag used in the artifact name
+        required: true
+        default: v0.2.8
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Rebuild compatible Linux AppImage
+    # Ubuntu 22.04 provides glibc 2.35. Building on this baseline keeps the
+    # binary compatible with newer systems, including glibc 2.38 on ALT K 11.
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libhidapi-dev \
+            libudev-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libssl-dev \
+            libgtk-3-dev
+
+      - name: Test source revision
+        run: cargo test --all-targets
+
+      - name: Package AppImage
+        shell: bash
+        run: |
+          asset="entropy-${{ inputs.release_tag }}-x86_64-glibc2.35.AppImage"
+          scripts/build_linux_appimage.sh "${{ inputs.release_tag }}" "dist/release/$asset"
+
+      - name: Verify glibc compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_glibc=""
+          while IFS= read -r binary; do
+            required_glibc="$(readelf --version-info "$binary" 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -n1 || true)"
+            if [[ -n "$required_glibc" ]] && { [[ -z "$max_glibc" ]] || dpkg --compare-versions "${max_glibc#GLIBC_}" lt "${required_glibc#GLIBC_}"; }; then
+              max_glibc="$required_glibc"
+            fi
+          done < <(find target/appimage/Entropy.AppDir/usr -type f)
+          test -n "$max_glibc"
+          echo "Highest bundled glibc requirement: $max_glibc"
+          dpkg --compare-versions "${max_glibc#GLIBC_}" le 2.38
+
+      - name: Upload compatibility artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: entropy-${{ inputs.release_tag }}-linux-glibc2.35
+          path: dist/release/*.AppImage
+          if-no-files-found: error

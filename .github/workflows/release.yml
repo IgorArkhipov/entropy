@@ -19,7 +19,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Build against glibc 2.35 so the AppImage runs on distributions
+          # such as ALT Linux Workstation K 11 (glibc 2.38).
+          - os: ubuntu-22.04
             kind: linux
           - os: windows-latest
             kind: windows
@@ -46,7 +48,7 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.kind == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
