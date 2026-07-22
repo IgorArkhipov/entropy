@@ -110,7 +110,6 @@ impl EntropyApp {
         selected_device_is_bluetooth: bool,
     ) {
         self.poll_settings_write(ctx);
-<<<<<<< HEAD
         // Retire an abandoned emoji worker before deciding whether HID scanning
         // can proceed; otherwise its timeout would delay reconnect by a frame.
         self.poll_emoji_assignment(ctx);
@@ -711,10 +710,10 @@ mod tests {
         assert!(!app.hid_write_task_active());
         assert!(app.hid_device.is_some());
 
-        app.apply_picker_results();
+        app.apply_picker_results(&ctx);
         assert_eq!(app.key_override_entries[0].trigger, 0x0004);
         assert!(app.keycode_picker.result.is_none());
-        app.apply_picker_results();
+        app.apply_picker_results(&ctx);
         assert_eq!(app.key_override_entries[0].trigger, 0x0004);
         app.flush_pending_key_override_writes();
 
@@ -1135,7 +1134,6 @@ impl eframe::App for EntropyApp {
             self.last_applied_theme = Some((self.dark_mode, accent_color));
         }
 
-<<<<<<< HEAD
         // Deliver results from any background file dialog (import/export pickers
         // run off the UI thread so the portal round-trip never freezes egui).
         #[cfg(not(target_arch = "wasm32"))]

@@ -1255,8 +1255,32 @@ mod linux_x11 {
     const KEY_PRESS: i32 = 2;
     const KEY_RELEASE: i32 = 3;
 
+    static X11_TRANSPORT_GRAB_FAILED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+
+    unsafe extern "C" fn x11_transport_grab_error_handler(
+        _display: *mut x11_dl::xlib::Display,
+        _error: *mut x11_dl::xlib::XErrorEvent,
+    ) -> i32 {
+        // XGrabKey reports BadAccess asynchronously. Synchronizing after the
+        // registration below makes this handler the readiness proof rather
+        // than optimistically enabling assignments after a queued request.
+        X11_TRANSPORT_GRAB_FAILED.store(true, std::sync::atomic::Ordering::Release);
+        0
+    }
+
+    fn x11_transport_ready(keycodes: &[(u8, u16)], grabs_succeeded: bool) -> bool {
+        grabs_succeeded
+            && (0..8u16).all(|index| {
+                keycodes
+                    .iter()
+                    .any(|(_, keycode)| *keycode == KC_F13 + index)
+            })
+    }
+
     pub fn run_x11_loop() {
         unsafe {
+            LINUX_X11_BACKEND_READY.store(false, std::sync::atomic::Ordering::Release);
             let Ok(xlib) = x11_dl::xlib::Xlib::open() else {
                 log::warn!("Smart Input: Xlib is unavailable");
                 return;
@@ -1268,6 +1292,9 @@ mod linux_x11 {
             }
             let root = (xlib.XDefaultRootWindow)(display);
             let mut keycodes = Vec::new();
+            X11_TRANSPORT_GRAB_FAILED.store(false, std::sync::atomic::Ordering::Release);
+            let previous_error_handler =
+                (xlib.XSetErrorHandler)(Some(x11_transport_grab_error_handler));
             for idx in 0..8u16 {
                 let keycode = (xlib.XKeysymToKeycode)(display, XK_F13 + idx as u64);
                 if keycode == 0 {
@@ -1287,8 +1314,18 @@ mod linux_x11 {
                 }
             }
             (xlib.XFlush)(display);
-            if keycodes.is_empty() {
-                log::warn!("Smart Input: X11 does not expose F13-F20 transport keys");
+            // Force X11 to deliver asynchronous BadAccess errors before we
+            // advertise the transport as usable, then restore the process's
+            // normal error handler before entering the event loop.
+            (xlib.XSync)(display, 0);
+            (xlib.XSetErrorHandler)(previous_error_handler);
+            let grabs_succeeded =
+                !X11_TRANSPORT_GRAB_FAILED.load(std::sync::atomic::Ordering::Acquire);
+            if !x11_transport_ready(&keycodes, grabs_succeeded) {
+                log::warn!(
+                    "Smart Input: X11 F13-F20 transport is incomplete or already grabbed by another process"
+                );
+                (xlib.XCloseDisplay)(display);
                 return;
             }
             LINUX_X11_BACKEND_READY.store(true, std::sync::atomic::Ordering::Release);
@@ -1335,6 +1372,30 @@ mod linux_x11 {
                     }
                 }
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn complete_transport_keys() -> Vec<(u8, u16)> {
+            (0..8u16)
+                .map(|index| (index as u8 + 1, KC_F13 + index))
+                .collect()
+        }
+
+        #[test]
+        fn x11_emoji_readiness_requires_f20() {
+            let mut keycodes = complete_transport_keys();
+            keycodes.pop();
+
+            assert!(!x11_transport_ready(&keycodes, true));
+        }
+
+        #[test]
+        fn x11_emoji_readiness_rejects_grab_conflicts() {
+            assert!(!x11_transport_ready(&complete_transport_keys(), false));
         }
     }
 

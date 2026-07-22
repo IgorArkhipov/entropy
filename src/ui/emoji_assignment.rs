@@ -224,17 +224,15 @@ impl EntropyApp {
                 .emoji_assignment_task
                 .take()
                 .expect("emoji task checked above");
-            let assignment = task.assignment.clone();
             self.emoji_assignment_reclaim_task = Some(task.into_reclaim());
             // The worker still owns the HID handle. Invalidate this connection
             // before allowing another scan so a late write cannot leave a live
             // layout paired with no handle.
-            self.handoff_hid_worker_disconnect(crate::i18n::tr_catalog(
+            self.clear_connected_keyboard_state(crate::i18n::tr_catalog(
                 self.app_settings.language,
                 "key_picker.emoji_worker_stopped",
             ));
-            self.restore_emoji_assignment(
-                assignment,
+            self.discard_emoji_assignment_after_disconnect(
                 crate::keycode_picker::EmojiAssignmentError::WorkerStopped,
                 None,
             );
@@ -269,12 +267,11 @@ impl EntropyApp {
                         let error = result.result.err().unwrap_or_else(|| {
                             "emoji assignment worker returned no HID handle".into()
                         });
-                        self.handoff_hid_worker_disconnect(crate::i18n::tr_catalog(
+                        self.clear_connected_keyboard_state(crate::i18n::tr_catalog(
                             self.app_settings.language,
                             "key_picker.emoji_save_failed",
                         ));
-                        self.restore_emoji_assignment(
-                            task.assignment,
+                        self.discard_emoji_assignment_after_disconnect(
                             crate::keycode_picker::EmojiAssignmentError::SaveFailed,
                             Some(error),
                         );
@@ -289,12 +286,11 @@ impl EntropyApp {
                     .emoji_assignment_task
                     .take()
                     .expect("emoji task checked above");
-                self.handoff_hid_worker_disconnect(crate::i18n::tr_catalog(
+                self.clear_connected_keyboard_state(crate::i18n::tr_catalog(
                     self.app_settings.language,
                     "key_picker.emoji_worker_stopped",
                 ));
-                self.restore_emoji_assignment(
-                    task.assignment,
+                self.discard_emoji_assignment_after_disconnect(
                     crate::keycode_picker::EmojiAssignmentError::WorkerStopped,
                     None,
                 );
@@ -398,6 +394,27 @@ impl EntropyApp {
         if let Some(error) = error {
             log::warn!("emoji assignment failed: {error}");
         }
+        self.status_msg = crate::i18n::tr_catalog(
+            self.app_settings.language,
+            emoji_assignment_error_key(reason),
+        )
+        .into();
+    }
+
+    fn discard_emoji_assignment_after_disconnect(
+        &mut self,
+        reason: crate::keycode_picker::EmojiAssignmentError,
+        error: Option<String>,
+    ) {
+        if let Some(error) = error {
+            log::warn!("emoji assignment failed after disconnect: {error}");
+        }
+        // A disconnect clears the layout and target selection. Keeping the
+        // staged choice visible would offer a retry that has nowhere to apply.
+        self.keycode_picker.emoji_assignment = None;
+        self.keycode_picker.emoji_assignment_error = None;
+        self.keycode_picker.result = None;
+        self.keycode_picker.open = false;
         self.status_msg = crate::i18n::tr_catalog(
             self.app_settings.language,
             emoji_assignment_error_key(reason),
@@ -668,16 +685,17 @@ mod tests {
         assert_eq!(app.hid_connection_generation, generation.wrapping_add(1));
         assert!(app.current_device_name.is_empty());
         assert!(app.hid_device.is_none());
-        app.device_manager.replace_devices(vec![crate::device::Device {
-            name: "Reconnect target".to_owned(),
-            vendor_id: 0,
-            product_id: 0,
-            manufacturer: String::new(),
-            serial_number: String::new(),
-            bus_type: String::new(),
-            path: "test:reconnect".to_owned(),
-            firmware: crate::firmware::FirmwareProtocol::Vial,
-        }]);
+        app.device_manager
+            .replace_devices(vec![crate::device::Device {
+                name: "Reconnect target".to_owned(),
+                vendor_id: 0,
+                product_id: 0,
+                manufacturer: String::new(),
+                serial_number: String::new(),
+                bus_type: String::new(),
+                path: "test:reconnect".to_owned(),
+                firmware: crate::firmware::FirmwareProtocol::Vial,
+            }]);
         app.start_connect(0);
         assert!(matches!(app.connect_state, ConnectState::Idle));
         assert!(sender
@@ -690,10 +708,9 @@ mod tests {
         assert!(!app.hid_write_task_active());
         app.start_connect(0);
         assert!(matches!(app.connect_state, ConnectState::Loading { .. }));
-        assert_eq!(
-            app.keycode_picker.emoji_assignment_error,
-            Some(crate::keycode_picker::EmojiAssignmentError::WorkerStopped)
-        );
+        assert!(!app.keycode_picker.open);
+        assert!(app.keycode_picker.emoji_assignment.is_none());
+        assert!(app.keycode_picker.emoji_assignment_error.is_none());
     }
 
     #[test]
@@ -744,7 +761,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_emoji_completion_preserves_explicit_retry_state() {
+    fn failed_emoji_completion_after_disconnect_is_not_retryable_without_a_target() {
         let ctx = egui::Context::default();
         let mut app = app(&ctx);
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -767,21 +784,12 @@ mod tests {
         app.poll_emoji_assignment(&ctx);
 
         assert!(app.emoji_assignment_task.is_none());
-        assert!(app.keycode_picker.open);
+        assert!(!app.keycode_picker.open);
         assert_eq!(app.hid_connection_generation, generation.wrapping_add(1));
         assert!(app.current_device_name.is_empty());
         assert!(app.hid_device.is_none());
-        assert_eq!(
-            app.keycode_picker
-                .emoji_assignment
-                .as_ref()
-                .map(|assignment| assignment.slot),
-            Some(0)
-        );
-        assert_eq!(
-            app.keycode_picker.emoji_assignment_error,
-            Some(crate::keycode_picker::EmojiAssignmentError::SaveFailed)
-        );
+        assert!(app.keycode_picker.emoji_assignment.is_none());
+        assert!(app.keycode_picker.emoji_assignment_error.is_none());
         assert_eq!(
             app.status_msg,
             crate::i18n::tr_catalog(app.app_settings.language, "key_picker.emoji_save_failed")

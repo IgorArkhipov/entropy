@@ -273,8 +273,8 @@ impl EntropyApp {
         self.keycode_picker.open = true;
         self.keycode_picker.result = None;
         self.keycode_picker.emoji_target_keycode = current_keycode;
-        self.keycode_picker.emoji_target_slot_reusable = self
-            .emoji_target_slot_reusable(current_keycode, key_target, encoder_target);
+        self.keycode_picker.emoji_target_slot_reusable =
+            self.emoji_target_slot_reusable(current_keycode, key_target, encoder_target);
         self.keycode_picker.emoji_assignment_backend_ready =
             crate::smart_input::emoji_assignment_backend_ready();
         self.keycode_picker.emoji_assignment_error = None;

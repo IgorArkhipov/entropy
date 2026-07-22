@@ -23,6 +23,11 @@ impl EntropyApp {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn defer_exit_until_hid_write_returns(&mut self, ctx: &egui::Context) -> bool {
+        // Process exit cannot reconnect or schedule another HID operation. Move
+        // an in-flight emoji write to reclaim-only ownership so a late result
+        // cannot mutate UI state, but do not hold Close hostage to that worker.
+        self.abandon_emoji_assignment();
+
         if !self.hid_write_lifecycle_busy() && !self.deferred_exit_has_pending_hid_writes() {
             return false;
         }
