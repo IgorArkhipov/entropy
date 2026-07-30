@@ -328,20 +328,13 @@ mod tests {
             "https://github.com/ergohaven/entropy/releases/download/..\\..\\..\\../attacker/repo/releases/download/v1/payload.exe",
         ] {
             assert!(!is_trusted_release_url(url), "{url}");
-        }
-    }
-
-    #[test]
-    fn refuses_untrusted_url_without_launching() {
-        let mut launched = false;
-        assert!(!open_trusted_release_url(
-            "file:///C:/Windows/System32/calc.exe",
-            |_| {
+            let mut launched = false;
+            assert!(!open_trusted_release_url(url, |_| {
                 launched = true;
                 true
-            }
-        ));
-        assert!(!launched);
+            }), "{url}");
+            assert!(!launched, "{url}");
+        }
     }
 
     #[test]
