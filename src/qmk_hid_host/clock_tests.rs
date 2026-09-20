@@ -466,8 +466,10 @@ fn selected_to_dedicated_clock_handoff_keeps_heartbeat_during_same_stalled_query
     done.recv_timeout(Duration::from_secs(5)).unwrap();
 }
 
-#[test]
-fn adopted_clock_bridge_reopens_dedicated_after_transport_loss() {
+fn assert_adopted_clock_bridge_reopens_dedicated(
+    bridge_target: crate::device::Device,
+    disconnect: impl FnOnce(&crate::hid::TestHidRecorder),
+) {
     let mode = HostDataMode {
         time: true,
         ..Default::default()
@@ -480,18 +482,6 @@ fn adopted_clock_bridge_reopens_dedicated_after_transport_loss() {
         capability[slot * 2..slot * 2 + 2].copy_from_slice(&id.to_le_bytes());
     }
     replacement_reports.respond_with([capability]);
-
-    let path = std::env::temp_dir().join(format!(
-        "entropy-adopted-reopen-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::write(&path, []).unwrap();
-    let mut bridge_target = target("adopted-reopen");
-    bridge_target.path = path.to_string_lossy().into_owned();
 
     let (opened_tx, opened_rx) = std::sync::mpsc::channel();
     let mut replacement = Some(replacement);
@@ -516,11 +506,31 @@ fn adopted_clock_bridge_reopens_dedicated_after_transport_loss() {
     await_report(&selected_reports, 0, DATA_DATE);
     assert!(bridge.adopt_selected_hid(adopted).is_ok());
     await_report(&adopted_reports, 0, DATA_HOST_STATUS);
-    std::fs::remove_file(&path).unwrap();
+    disconnect(&adopted_reports);
 
     assert!(
         !opened_rx.recv_timeout(Duration::from_secs(5)).unwrap(),
         "worker retried the expired selected shared owner after handoff"
     );
+    await_report(&replacement_reports, 0, DATA_HOST_STATUS);
     stop_and_join(&mut bridge);
+}
+
+#[test]
+fn adopted_clock_bridge_reopens_dedicated_after_transport_loss() {
+    assert_adopted_clock_bridge_reopens_dedicated(target("adopted-reopen"), |reports| {
+        reports.disconnect_output();
+    });
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn adopted_clock_bridge_reopens_dedicated_after_path_disappears() {
+    let path = tempfile::NamedTempFile::new().unwrap();
+    let mut bridge_target = target("adopted-reopen-path");
+    bridge_target.path = path.path().to_string_lossy().into_owned();
+
+    assert_adopted_clock_bridge_reopens_dedicated(bridge_target, move |_| {
+        path.close().unwrap();
+    });
 }
