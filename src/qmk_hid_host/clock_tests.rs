@@ -469,6 +469,7 @@ fn selected_to_dedicated_clock_handoff_keeps_heartbeat_during_same_stalled_query
 fn assert_adopted_clock_bridge_reopens_dedicated(
     bridge_target: crate::device::Device,
     disconnect: impl FnOnce(&crate::hid::TestHidRecorder),
+    prepare_replacement: impl FnOnce() + Send + 'static,
 ) {
     let mode = HostDataMode {
         time: true,
@@ -485,6 +486,7 @@ fn assert_adopted_clock_bridge_reopens_dedicated(
 
     let (opened_tx, opened_rx) = std::sync::mpsc::channel();
     let mut replacement = Some(replacement);
+    let mut prepare_replacement = Some(prepare_replacement);
     let mut bridge = QmkHidHostBridge::start_with_sources(
         bridge_target,
         mode,
@@ -495,9 +497,14 @@ fn assert_adopted_clock_bridge_reopens_dedicated(
             opened_tx.send(shared.is_some()).unwrap();
             match shared {
                 Some(output) => Ok(HostDataHid::Shared(output.clone())),
-                None => Ok(HostDataHid::Dedicated(
-                    replacement.take().expect("replacement owner exhausted"),
-                )),
+                None => {
+                    prepare_replacement
+                        .take()
+                        .expect("replacement preparation exhausted")();
+                    Ok(HostDataHid::Dedicated(
+                        replacement.take().expect("replacement owner exhausted"),
+                    ))
+                }
             }
         },
     );
@@ -518,19 +525,27 @@ fn assert_adopted_clock_bridge_reopens_dedicated(
 
 #[test]
 fn adopted_clock_bridge_reopens_dedicated_after_transport_loss() {
-    assert_adopted_clock_bridge_reopens_dedicated(target("adopted-reopen"), |reports| {
-        reports.disconnect_output();
-    });
+    assert_adopted_clock_bridge_reopens_dedicated(
+        target("adopted-reopen"),
+        |reports| reports.disconnect_output(),
+        || {},
+    );
 }
 
 #[cfg(target_os = "linux")]
 #[test]
 fn adopted_clock_bridge_reopens_dedicated_after_path_disappears() {
-    let path = tempfile::NamedTempFile::new().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("hid-device");
+    std::fs::write(&path, []).unwrap();
     let mut bridge_target = target("adopted-reopen-path");
-    bridge_target.path = path.path().to_string_lossy().into_owned();
+    bridge_target.path = path.to_string_lossy().into_owned();
+    let disconnected_path = path.clone();
+    let replacement_path = path.clone();
 
-    assert_adopted_clock_bridge_reopens_dedicated(bridge_target, move |_| {
-        path.close().unwrap();
-    });
+    assert_adopted_clock_bridge_reopens_dedicated(
+        bridge_target,
+        move |_| std::fs::remove_file(disconnected_path).unwrap(),
+        move || std::fs::write(replacement_path, []).unwrap(),
+    );
 }
