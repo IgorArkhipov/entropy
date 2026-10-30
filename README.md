@@ -142,7 +142,7 @@ are logged), `64` usage error.
 ## Linux Device Access
 
 Vial devices use hidraw access on Linux. If your device appears but cannot be opened,
-use the **Install rules** action in Entropy settings, or install the
+use **Entropy device access → Install rules** in Entropy settings, or install the
 included udev rule manually from a source checkout:
 
 ```sh
@@ -176,7 +176,7 @@ A flake is included. Run without installing:
 nix run github:ergohaven/entropy
 ```
 
-The in-app setup actions cannot work on NixOS: **Install rules**
+The in-app setup actions cannot work on NixOS: **Entropy device access → Install rules**
 writes to `/etc/udev/rules.d`, and IBus loads engines only from its own store
 path, so a copy under `~/.local/share` is never picked up. Use the NixOS module
 instead, which covers both declaratively:

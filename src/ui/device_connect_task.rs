@@ -905,7 +905,7 @@ impl EntropyApp {
                         );
                     } else {
                         log::info!(
-                            "Runtime firmware version unavailable; Keyboard definition and QMK settings caches disabled"
+                            "Runtime firmware version unavailable; keyboard definition and QMK settings caches disabled"
                         );
                     }
                     json
