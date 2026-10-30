@@ -141,12 +141,20 @@ pub(crate) struct DetectedApplication {
 }
 
 impl DetectedApplication {
-    pub(crate) fn label(&self) -> String {
-        let name = if self.display_name.trim().is_empty() {
+    pub(crate) fn name(&self) -> &str {
+        // Window-system labels can retain the old launch name even when the
+        // executable or bundle identity identifies Entropy unambiguously.
+        if is_entropy_executable(&self.executable) {
+            crate::APP_TITLE
+        } else if self.display_name.trim().is_empty() {
             self.executable.trim()
         } else {
             self.display_name.trim()
-        };
+        }
+    }
+
+    pub(crate) fn label(&self) -> String {
+        let name = self.name();
         if self.window_title.trim().is_empty() || self.window_title.trim() == name {
             name.to_owned()
         } else {
@@ -672,7 +680,8 @@ impl DeviceApplicationLayouts {
                 .layouts
                 .values()
                 .find(|layout| {
-                    layout.name == "Vial" && normalize_executable(&layout.executable) == "entropy"
+                    layout.name.trim().eq_ignore_ascii_case("vial")
+                        && is_entropy_executable(&layout.executable)
                 })
                 .map(|layout| layout.id.clone());
             if let Some(id) = legacy_entropy {
@@ -722,11 +731,7 @@ impl DeviceApplicationLayouts {
         title_contains: &str,
     ) -> String {
         let id = self.unique_id(&application.executable);
-        let default_name = if application.display_name.trim().is_empty() {
-            application.executable.trim()
-        } else {
-            application.display_name.trim()
-        };
+        let default_name = application.name();
         let name = requested_name
             .map(str::trim)
             .filter(|name| !name.is_empty())
@@ -1073,7 +1078,7 @@ impl DeviceApplicationLayouts {
         );
         let name = name.trim();
         let name = if name.is_empty() {
-            application.display_name.trim()
+            application.name()
         } else {
             name
         };
@@ -1454,6 +1459,13 @@ fn application_layout_name_bytes(name: &str) -> &[u8] {
         end -= 1;
     }
     &name.as_bytes()[..end]
+}
+
+fn is_entropy_executable(value: &str) -> bool {
+    matches!(
+        normalize_executable(value).as_str(),
+        "entropy" | "comergohavenentropy"
+    )
 }
 
 pub(crate) fn normalize_executable(value: &str) -> String {
@@ -3380,6 +3392,47 @@ mod tests {
         let replacement = app("chromium", "Chromium");
         assert!(settings.update_application_rule(&id, &replacement, "Web", ""));
         assert!(!settings.pending_builtin_auto_bind.contains_key(&id));
+    }
+
+    #[test]
+    fn entropy_application_labels_and_default_profile_names_ignore_legacy_branding() {
+        for executable in ["entropy", "C:\\Apps\\Entropy.exe", "com.ergohaven.entropy"] {
+            let application = DetectedApplication {
+                executable: executable.into(),
+                display_name: "vial".into(),
+                window_title: "Entropy".into(),
+                ..Default::default()
+            };
+            assert_eq!(application.label(), "Entropy", "{executable}");
+            let mut settings = DeviceApplicationLayouts::default();
+            let id = settings.create_for_application(&application);
+            assert_eq!(settings.layouts[&id].name, "Entropy");
+            assert_eq!(settings.layouts[&id].executable, executable);
+            settings.update_application_rule(&id, &application, "", "");
+            assert_eq!(settings.layouts[&id].name, "Entropy");
+        }
+
+        let vial = DetectedApplication {
+            executable: "vial".into(),
+            display_name: "Vial".into(),
+            ..Default::default()
+        };
+        assert_eq!(vial.label(), "Vial");
+    }
+
+    #[test]
+    fn normalize_renames_lowercase_vial_for_entropy_without_changing_custom_names() {
+        for executable in ["entropy", "com.ergohaven.entropy"] {
+            let mut settings = DeviceApplicationLayouts::default();
+            let application = app(executable, "Entropy");
+            let legacy = settings.create_for_application_named(&application, Some("vial"), "");
+            let custom =
+                settings.create_for_application_named(&application, Some("Keyboard setup"), "");
+            assert!(settings.normalize());
+            assert_eq!(settings.layouts[&legacy].name, "Entropy");
+            assert_eq!(settings.layouts[&custom].name, "Keyboard setup");
+            assert!(!settings.normalize());
+        }
     }
 
     #[test]
