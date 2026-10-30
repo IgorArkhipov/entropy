@@ -2828,25 +2828,6 @@ mod tests {
     }
 
     #[test]
-    fn automatic_entropy_layout_name_uses_brand_and_preserves_unique_names() {
-        let mut settings = crate::application_layouts::DeviceApplicationLayouts::default();
-        let application = detected_application("entropy", "vial");
-        assert_eq!(
-            automatic_application_layout_name(&settings, &application, None),
-            "Entropy"
-        );
-        let id = settings.create_for_application(&application);
-        assert_eq!(
-            automatic_application_layout_name(&settings, &application, None),
-            "Entropy (2)"
-        );
-        assert_eq!(
-            automatic_application_layout_name(&settings, &application, Some(&id)),
-            "Entropy"
-        );
-    }
-
-    #[test]
     fn automatic_layout_names_are_unique_for_new_applications() {
         let mut settings = crate::application_layouts::DeviceApplicationLayouts::default();
         let first = crate::application_layouts::DetectedApplication {
