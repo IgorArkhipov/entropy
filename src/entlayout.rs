@@ -400,7 +400,13 @@ fn plan_entlayout_portable_settings_import(
         }
         let mut setting = setting.clone();
         setting.value = ent_portable_setting_import_value(&setting, target);
-        if setting.value == target.value {
+        // The layer LED reader only reads the primary register. Its cached
+        // value cannot prove that linked registers match after a partial write.
+        let has_linked_colors = setting.is_layer_led_color()
+            && target_settings
+                .iter()
+                .any(|other| other.id == setting.id && other.qsid != setting.qsid);
+        if setting.value == target.value && !has_linked_colors {
             // Already matching values are successful imports without another
             // flash write or BLE round trip.
             report.record_imported();
@@ -4346,6 +4352,49 @@ mod tests {
         let (_, _, report) = target.apply_entlayout(&bundle).unwrap();
         assert_eq!(report.failed, 1);
         assert_eq!(target.layer_led_settings.layer_colors[0].value, 0);
+        let (hid, recorder) = crate::hid::HidDevice::test_device();
+        target.hid_device = Some(hid);
+        let (failures, _, report) = target.apply_entlayout(&bundle).unwrap();
+        assert!(failures.is_empty());
+        assert_eq!(report.failed, 0);
+        assert!(recorder
+            .requests()
+            .iter()
+            .any(|r| r[..5] == [0xfe, 0x0b, 144, 1, 16]));
+    }
+
+    #[test]
+    fn entlayout_layer_colors_reconnect_repairs_linked_registers() {
+        let mut source = phenom_app(16);
+        source.supported_qmk_settings.push(400);
+        source.layer_led_settings.layer_colors[0]
+            .linked_qsids
+            .push(400);
+        let bundle = source.entlayout_snapshot().unwrap();
+        let mut target = phenom_app(0);
+        target.supported_qmk_settings.push(400);
+        let definition = serde_json::json!({
+            "settings": [{"name": "LEDs settings", "fields": [
+                {"type": "select", "title": "Layer 0 color", "qsid": 300},
+                {"type": "select", "title": "Layer 0 color", "qsid": 400}
+            ]}]
+        });
+        let (hid, recorder) = crate::hid::HidDevice::test_device();
+        recorder.respond_by(|request| {
+            (request[..2] == [0xfe, 0x0a]).then(|| {
+                let mut response = [0; 32];
+                // Reconnect after only the primary register was written successfully.
+                response[1] = if request[2..4] == [44, 1] { 16 } else { 0 };
+                Ok(response)
+            })
+        });
+        target.layer_led_settings = EntropyApp::read_layer_led_settings(
+            &definition,
+            &target.supported_qmk_settings,
+            target.layer_count,
+            &hid,
+        );
+        assert_eq!(target.layer_led_settings.layer_colors[0].value, 16);
         let (hid, recorder) = crate::hid::HidDevice::test_device();
         target.hid_device = Some(hid);
         let (failures, _, report) = target.apply_entlayout(&bundle).unwrap();
