@@ -1,12 +1,6 @@
-# PR #277 UI screenshots
+# Phenom UI previews
 
-Native macOS About device page from Entropy PR #277, source head d9b0d3004d241fd9f12cb2f6d745c4633b80a536.
+- About page: PR #277 at b485e3a4ade54ee902e9baa004d4892874907332. No UF2 notice in the normal device view.
+- Ready-to-flash dialog: PR #275 at 3b5fae8b4020d7058c8d057e6b42930856bb1934. UF2 notice below transfer controls, after download/preparation. The existing dialog was scrolled to show the notice and instructions link.
 
-The preview uses simulated Phenom data with native RMK/Rynk firmware 0.3.0 and illustrative release metadata. No keyboard was connected, queried, reset, or flashed.
-
-The preview calls the production About device renderer with the production fonts and theme, using the inert application constructor. A temporary entry point requests eframe framebuffer PNG captures after layout settles. Temporary source changes were restored afterward.
-
-- phenom-about-en.png: English
-- phenom-about-ru.png: Russian
-
-These images verify presentation only, not device communication or live release discovery.
+All screenshots render the real macOS UI with production fonts and theme, at a fixed 1000 x 820 point window. Phenom identity, firmware versions and release metadata are simulated. The 0.3.1 preview is illustrative, not a release-availability claim. No keyboard was connected, queried, reset, or flashed. Temporary native screenshot entry points were restored after capture.
